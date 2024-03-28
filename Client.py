@@ -1,10 +1,14 @@
+import errno
+import msvcrt
 import socket
 import threading
 import sys
+import readchar
 import time
 
+import select
+
 BROADCAST_PORT = 13117  # Known broadcast port
-GAME_DURATION = 30  # Game duration in seconds
 TEAM_NAME = "YourTeamName"  # Predefined team name
 
 class Client:
@@ -15,6 +19,10 @@ class Client:
         self.connected = False
         self.server_address = None  # Dynamically assigned server address
         self.server_port = None  # Dynamically assigned server port
+        self.player_name = None
+        self.input_thread = None
+        self.game_ended = False
+        self.input_condition = threading.Condition()
 
     def receive_broadcast(self):
         broadcast_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -25,7 +33,7 @@ class Client:
             print("Listening for server broadcast...")
             broadcast_socket.bind(('', BROADCAST_PORT))
 
-            while not self.server_address:
+            while True:
                 data, addr = broadcast_socket.recvfrom(1024)
                 magic_cookie = data[:4]
                 message_type = data[4]
@@ -35,37 +43,53 @@ class Client:
                     self.server_port = int.from_bytes(data[37:39], byteorder='big')
                     print(f"Received server broadcast from {self.server_address}:{self.server_port}")
                     break
+                if self.server_address:
+                    return
+                time.sleep(1)
+
+
         except KeyboardInterrupt:
-            broadcast_socket.close()
+            print("here")
+            pass
+
+
+
+
 
     def connect_to_server(self):
         try:
             print(f"Connecting to the server at {self.server_address}:{self.server_port}...")
             self.client_socket.connect((self.server_address, self.server_port))
-            #self.client_socket.connect(('127.0.0.1', self.server_port))
             self.connected = True
-            self.state = "game_mode"
+            self.state = "waiting_for_game_start"
             print("Connected to the server!")
 
             # Send player name to the server
-            player_name = input("Enter your player name: ")
-            self.client_socket.sendall(player_name.encode() + b'\n')  # Send player name with newline
+            self.player_name = input("Enter your player name: ")
+            self.client_socket.sendall(self.player_name.encode()) # Send player name with newline
+
         except socket.timeout:
             print("Connection timed out. No servers found.")
-            sys.exit()
+            self.receive_broadcast()
 
     def handle_user_input(self):
         while True:
-            if self.state == "game_mode":
-                input_char = input("Enter a character (or 'quit' to exit): ")
-                if input_char.lower() == "quit":
-                    self.client_socket.close()
-                    break
-                self.client_socket.sendall(input_char.encode())
-            elif self.state == "connecting_to_server":
-                pass
-            elif self.state == "looking_for_server":
-                pass
+            if self.game_ended:
+                return
+            input_char = 'l'
+            first = True
+            while ((input_char.strip().upper() not in ['Y', 'N', 'F', 'T', ]) &
+                   (input_char.strip() not in ['0', '1', ])):
+                if not first:
+                    print("please insert only N,Y,F,T,0 or 1")
+                first = False
+                input_char = input()
+            self.client_socket.sendall(input_char.encode())
+            self.input_condition.acquire()
+            self.input_condition.wait()
+            self.input_condition.release()
+
+
 
     def receive_data_from_server(self):
         while True:
@@ -73,33 +97,49 @@ class Client:
                 data = self.client_socket.recv(1024)
                 if not data:
                     break
-                print("Received from server:", data.decode())
+                if "please insert" in data.decode().strip():
+                    self.input_condition.acquire()
+                    self.input_condition.notify_all()
+                    self.input_condition.release()
+
+                print("Received from server:", data.decode().strip())
+
+                if "Congratulations to" in data.decode().strip():
+                    self.game_ended =True
+                    self.input_condition.acquire()
+                    self.input_condition.notify_all()
+                    self.input_condition.release()
+                    return
+
             except socket.timeout:
                 pass
+            finally:
+                time.sleep(0.3)
+
 
     def run(self):
-        broadcast_thread = threading.Thread(target=self.receive_broadcast)
-        broadcast_thread.daemon = True
-        broadcast_thread.start()
 
         while not self.server_address:  # Wait until the server address is determined
-            pass
+            self.receive_broadcast()
+            time.sleep(0.5)
 
         self.connect_to_server()
 
-        input_thread = threading.Thread(target=self.handle_user_input)
-        input_thread.daemon = True
-        input_thread.start()
+        self.input_thread = threading.Thread(target=self.handle_user_input)
+        self.input_thread.daemon = True
+        self.input_thread.start()
 
-        receive_thread = threading.Thread(target=self.receive_data_from_server)
-        receive_thread.daemon = True
-        receive_thread.start()
+        self.receive_data_from_server()
 
-        input_thread.join()  # Wait for input thread to finish (if it finishes, we exit)
+        self.input_thread.join()
+        self.client_socket.close()
+        return
+
 
 def main():
-    client = Client()
-    client.run()
+    while 1:
+        client = Client()
+        client.run()
 
 if __name__ == "__main__":
     main()
