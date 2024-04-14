@@ -31,12 +31,15 @@ class Client:
 
         try:
             print("Listening for server broadcast...")
-            broadcast_socket.bind(('', BROADCAST_PORT))
+            broadcast_socket.bind(('0.0.0.0', BROADCAST_PORT))
 
             while True:
+
                 data, addr = broadcast_socket.recvfrom(1024)
+
                 magic_cookie = data[:4]
                 message_type = data[4]
+
 
                 if magic_cookie == b"\xab\xcd\xdc\xba" and message_type == 0x2:
                     self.server_address = addr[0]

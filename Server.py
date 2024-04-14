@@ -1,7 +1,6 @@
 import socket
 import threading
 import time
-import random
 
 from Questions import Questions
 
@@ -12,13 +11,15 @@ STATE_WAITING_FOR_CLIENTS = 0
 STATE_GAME_MODE = 1
 quesBank = Questions()
 
+
+
+
 class ClientHandler(threading.Thread):
     def __init__(self, client_socket, client_address, player_name):
         super().__init__()
         self.client_socket = client_socket
         self.client_address = client_address
         self.player_name = player_name
-        self.score = 0
         self.wait_lock = threading.Condition()
 
     def run(self):
@@ -33,6 +34,32 @@ class ClientHandler(threading.Thread):
         return self.player_name
 
 class Server:
+
+
+
+    def get_adress_with_255(self):
+        # Create a UDP socket
+        udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+        try:
+            # connect to google DNS
+            udp_socket.connect(("8.8.8.8", 80))
+            # find local IP
+            local_ip = udp_socket.getsockname()[0]
+
+            # Extract the subnet address
+            address_without_end = '.'.join(local_ip.split('.')[:-1])
+
+            # Construct the broadcast address
+            address = address_without_end + ".255"
+
+        finally:
+            # Close the socket to release resources
+            udp_socket.close()
+
+        return address
+
+
     def __init__(self):
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -45,13 +72,13 @@ class Server:
 
 
 
-    def start_BroadCast(self , server_port , server_address):
+    def start_broadcast(self,server_port,server_address):
         broadcast_thread = threading.Thread(target=self.send_offer_message, args=(server_port, server_address,))
         broadcast_thread.daemon = True
         broadcast_thread.start()
-
-        try:
-            while True:
+        self.server_socket.settimeout(1)
+        while True:
+            try:
                 client_socket, client_address = self.server_socket.accept()
                 print(f"New connection from {client_address}")
 
@@ -61,12 +88,13 @@ class Server:
                 client_handler.start()
                 self.clients.append(client_handler)
                 self.last_client_connect_time = time.time()
-                while True:
+
+            except socket.timeout:
+                if self.last_client_connect_time:
                     if time.time() - self.last_client_connect_time > 10:
                         self.run_game()
                         return
-        except KeyboardInterrupt:
-            print("Server stopped by user.")
+
 
 
     def send_offer_message(self, server_port, server_address):
@@ -74,7 +102,7 @@ class Server:
         broadcast_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         broadcast_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         broadcast_socket.bind((server_address, BROADCAST_PORT))
-
+        broadcast_address = self.get_adress_with_255()
         try:
             while True:
                 if self.last_client_connect_time is not None and time.time() - self.last_client_connect_time > 10:
@@ -83,9 +111,9 @@ class Server:
                 print("Sending offer message...")
                 offer_message = b"\xab\xcd\xdc\xba"  # Magic cookie
                 offer_message += b"\x02"  # Message type: 0x2 for offer
-                offer_message += bytes("ServerName".ljust(32), 'utf-8')  # Server name
+                offer_message += bytes("BestServerEver".ljust(32), 'utf-8')  # Server name
                 offer_message += server_port.to_bytes(2, byteorder='big')  # Server port
-                broadcast_socket.sendto(offer_message, ('<broadcast>', BROADCAST_PORT))
+                broadcast_socket.sendto(offer_message, (broadcast_address, BROADCAST_PORT))
                 time.sleep(2)
 
         except KeyboardInterrupt:
@@ -101,57 +129,66 @@ class Server:
         while not quesBank.no_repeated_questions_remaining():
             question, answer = quesBank.get_random_question()
             for client in self.clients:
+                if client not in self.removed_clients:
+                    client_socket = client.client_socket
+                    question_message = f"Question: {question}\n".encode()
+                    client_socket.sendall(question_message)
+                    print(question_message.decode())
+                    client_socket.sendall(b"please insert your answer:\n")
+                    print("please insert your answer:")
+            start_time = time.time()
+            while time.time()-start_time < 10 & len(self.removed_clients) < len(self.clients):
+                for client in self.clients:
+                    try:
+                        client_socket = client.client_socket
+                        client_socket.settimeout(0.3)
+                        client_name = client.get_name()
+                        received_response = client_socket.recv(1024).decode().strip().upper()
+                        client_socket.settimeout(None)
+                        # Map the received response to true or false
+                        if received_response in ['Y', 'T', '1']:
+                            received_response = True
+                        elif received_response in ['N', 'F', '0']:
+                            received_response = False
+                        print(f"{client.get_name()} sends {received_response}\n")
+
+                        # Compare the received response with the correct answer
+                        if received_response == answer:
+                            text = f"{client_name} is Correct!, {client_name} won!!\n"
+                            self.winnerName = client_name
+                            print(f"{client_name} is Correct!, {client_name} won!! \n")
+                            for curr in self.clients:
+                                curr.client_socket.sendall(text.encode())
+                            self.end_game()
+                            return
+                        else:
+                            text = f"{client_name} is Incorrect ,\n"
+                            print(f"{client_name} is Incorrect \n")
+                            for curr in self.clients:
+                                curr.client_socket.sendall(text.encode())
+                            text = f"you are wrong please wait to the next round of questions\n"
+                            client_socket.sendall(text.encode())
+                            self.remove(client)
+                            continue
+                    except socket.timeout:
+                        pass
+            for client in self.clients:
                 client_socket = client.client_socket
-                client_name = client.get_name()
-                question_message = f"Question: {question}\n".encode()
-                client_socket.sendall(question_message)
-                print(question_message.decode())
-                client_socket.sendall(b"please insert your answer:\n")
-                print("please insert your answer:")
-                try:
-                    client_socket.settimeout(ANSWER_TIME_LIMIT)
-                    received_response = client_socket.recv(1024).decode().strip().upper()
-                    client_socket.settimeout(None)
-
-                    # Map the received response to true or false
-                    if received_response in ['Y', 'T', '1']:
-                        received_response = True
-                    elif received_response in ['N', 'F', '0']:
-                        received_response = False
-                    print(f"{client.get_name()} sends {received_response}\n")
-
-                    # Compare the received response with the correct answer
-                    if received_response == answer:
-                        text = f"{client_name} is Correct!, {client_name} won!!\n"
-                        self.winnerName = client_name
-                        print(f"{client_name} is Correct!, {client_name} won!! \n")
-                        client_socket.sendall(text.encode())
-                        self.end_game()
-                        return
-                    else:
-                        text = f"{client_name} is Incorrect\n"
-                        print(f"{client_name} is Incorrect \n")
-                        client_socket.sendall(text.encode())
-                        self.remove(client)
-                except socket.timeout:
-                    client_socket.sendall(b"Time's up!\n")
-                    print("Time's up!\n")
-        print("here\n")
+                client_socket.sendall(b"Time's up!\n")
+                print("Time's up!\n")
         self.end_game()
-
-
-
-
 
     def run(self):
         self.server_socket.bind(('', 0))  # Bind to any available interface
         self.server_socket.listen(5)
 
         server_port = self.server_socket.getsockname()[1]  # Get the dynamically assigned port
-        server_address = self.server_socket.getsockname()[0]
+        server_address = socket.gethostbyname(socket.gethostname())
         print(f"Server started, listening on IP address {server_address} port {server_port}...")
-        self.start_BroadCast(server_port, server_address)
+        self.start_broadcast(server_port, server_address)
         return
+
+
 
 
     def end_game(self):
