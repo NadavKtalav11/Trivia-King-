@@ -33,9 +33,20 @@ class ClientHandler(threading.Thread):
     def get_name(self):
         return self.player_name
 
+
 class Server:
 
 
+
+    def __init__(self):
+        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.clients = []
+        self.removed_clients = set()
+        self.state = STATE_WAITING_FOR_CLIENTS
+        self.game_start_time = None
+        self.last_client_connect_time = None
+        self.winnerName = ""
 
     def get_adress_with_255(self):
         # Create a UDP socket
@@ -60,35 +71,32 @@ class Server:
         return address
 
 
-    def __init__(self):
-        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.clients = []
-        self.removed_clients = set()
-        self.state = STATE_WAITING_FOR_CLIENTS
-        self.game_start_time = None
-        self.last_client_connect_time = None
-        self.winnerName = ""
-
-
 
     def start_broadcast(self,server_port,server_address):
         broadcast_thread = threading.Thread(target=self.send_offer_message, args=(server_port, server_address,))
         broadcast_thread.daemon = True
         broadcast_thread.start()
         self.server_socket.settimeout(1)
+        self.last_client_connect_time = None
         while True:
             try:
                 client_socket, client_address = self.server_socket.accept()
+                player_name = None
                 print(f"New connection from {client_address}")
+                client_socket.settimeout(0.1)
+                while player_name == None:
+                    try:
+                        player_name = client_socket.recv(1024).decode().strip()
+                    except socket.timeout:
+                            if self.last_client_connect_time is not None and self.last_client_connect_time < time.time():
+                                break
 
-                player_name = client_socket.recv(1024).decode().strip()
-                print(f"Player '{player_name}' connected.")
-                client_handler = ClientHandler(client_socket, client_address, player_name)
-                client_handler.start()
-                self.clients.append(client_handler)
-                self.last_client_connect_time = time.time()
-
+                if player_name is not None:
+                    print(f"Player '{player_name}' connected.")
+                    client_handler = ClientHandler(client_socket, client_address, player_name)
+                    client_handler.start()
+                    self.clients.append(client_handler)
+                    self.last_client_connect_time = time.time()
             except socket.timeout:
                 if self.last_client_connect_time:
                     if time.time() - self.last_client_connect_time > 10:
@@ -124,10 +132,12 @@ class Server:
         self.removed_clients.add(c)
 
     def run_game(self):
+
         print("Starting the game...")
         self.game_start_time = time.time()
         while not quesBank.no_repeated_questions_remaining():
             question, answer = quesBank.get_random_question()
+            self.removed_clients = set()
             for client in self.clients:
                 if client not in self.removed_clients:
                     client_socket = client.client_socket
@@ -137,7 +147,9 @@ class Server:
                     client_socket.sendall(b"please insert your answer:\n")
                     print("please insert your answer:")
             start_time = time.time()
-            while time.time()-start_time < 10 & len(self.removed_clients) < len(self.clients):
+            while time.time()-start_time < 10:
+                if len(self.removed_clients) == len(self.clients):
+                    break
                 for client in self.clients:
                     try:
                         client_socket = client.client_socket
@@ -162,19 +174,21 @@ class Server:
                             self.end_game()
                             return
                         else:
-                            text = f"{client_name} is Incorrect ,\n"
-                            print(f"{client_name} is Incorrect \n")
+                            text = f"{client_name} is suspended\n"
+                            print(f"{client_name} is Incorrect\n")
                             for curr in self.clients:
-                                curr.client_socket.sendall(text.encode())
+                                if curr.client_socket!= client_socket:
+                                    curr.client_socket.sendall(text.encode())
                             text = f"you are wrong please wait to the next round of questions\n"
                             client_socket.sendall(text.encode())
                             self.remove(client)
                             continue
                     except socket.timeout:
-                        pass
-            for client in self.clients:
-                client_socket = client.client_socket
-                client_socket.sendall(b"Time's up!\n")
+                        continue
+            if not len(self.removed_clients) == len(self.clients):
+                for client in self.clients:
+                    client_socket = client.client_socket
+                    client_socket.sendall(b"Time's up!\n")
                 print("Time's up!\n")
         self.end_game()
 
@@ -196,6 +210,7 @@ class Server:
         for client in self.clients:
             sock = client.client_socket
             sock.sendall(game_over.encode())
+            sock.close()
         print(game_over)
         self.server_socket.close()
 
