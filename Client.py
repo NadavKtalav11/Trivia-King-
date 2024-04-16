@@ -1,10 +1,12 @@
 import errno
 import msvcrt
+import os
 import socket
 import threading
 import sys
 import readchar
 import time
+from inputimeout import inputimeout , TimeoutOccurred
 
 import select
 
@@ -77,22 +79,25 @@ class Client:
 
     def handle_user_input(self):
         while True:
-            if self.game_ended:
-                return
-            input_char = 'l'
-            first = True
-            while ((input_char.strip().upper() not in ['Y', 'N', 'F', 'T', ]) &
-                   (input_char.strip() not in ['0', '1', ])):
-                if not first:
-                    print("please insert only N,Y,F,T,0 or 1")
-                first = False
-                input_char = input()
-            self.client_socket.sendall(input_char.encode())
-            self.input_condition.acquire()
-            self.input_condition.wait()
-            self.input_condition.release()
+            try:
+                if self.game_ended:
+                    return
+                pressed_key = None
+                if msvcrt.kbhit():
+                    pressed_key = msvcrt.getch()
+                    print("your answer " + pressed_key.decode())
+                    if pressed_key in ([b'Y', b'N', b'F', b'T',b'1',b'0' ,b'y', b'n' ,b'f', b't']):
+                        self.client_socket.sendall(pressed_key + b'\n')
+                        self.input_condition.acquire()
+                        self.input_condition.wait()
+                        self.input_condition.release()
+                    else:
+                        print("please insert only N,Y,F,T,0 or 1 -")
 
 
+                time.sleep(0.1)
+            except Exception:
+                pass
 
     def receive_data_from_server(self):
         while True:
@@ -109,6 +114,7 @@ class Client:
 
                 if "Congratulations to" in data.decode().strip():
                     self.game_ended =True
+
                     self.input_condition.acquire()
                     self.input_condition.notify_all()
                     self.input_condition.release()
@@ -127,13 +133,10 @@ class Client:
             time.sleep(0.5)
 
         self.connect_to_server()
-
         self.input_thread = threading.Thread(target=self.handle_user_input)
         self.input_thread.daemon = True
         self.input_thread.start()
-
         self.receive_data_from_server()
-
         self.input_thread.join()
         self.client_socket.close()
         return
