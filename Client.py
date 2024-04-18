@@ -27,8 +27,7 @@ colors = ["Red", "Blue", "Green", "Yellow", "Purple",
 class Client:
     def __init__(self):
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.client_socket.settimeout(3)  # Timeout for socket operations
-        self.state = "looking_for_server"
+        self.client_socket.settimeout(None)  # Timeout for socket operations
         self.connected = False
         self.server_address = None  # Dynamically assigned server address
         self.server_port = None  # Dynamically assigned server port
@@ -85,12 +84,11 @@ class Client:
             print(f"Connecting to the server at {self.server_address}:{self.server_port}...")
             self.client_socket.connect((self.server_address, self.server_port))
             self.connected = True
-            self.state = "waiting_for_game_start"
             print("Connected to the server!")
 
             # Send player name to the server
             self.player_name = self.generate_name()
-            self.client_socket.sendall(self.player_name.encode()) # Send player name with newline
+            self.client_socket.sendall(self.player_name.encode())# Send player name with newline
 
         except socket.timeout:
             print("Connection timed out. No servers found.")
