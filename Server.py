@@ -33,8 +33,7 @@ class ClientHandler(threading.Thread):
         client_socket = self.client_socket
         while True:
             try:
-
-                client_socket.settimeout(None)
+                client_socket.settimeout(0.1)
                 received_response = client_socket.recv(1024).decode().strip().upper()
                 client_socket.settimeout(None)
                 # Map the received response to true or false
@@ -42,6 +41,8 @@ class ClientHandler(threading.Thread):
                     received_response = True
                 elif received_response in ['N', 'F', '0']:
                     received_response = False
+                else:
+                    break
                 print(f"{self.player_name} sends {received_response}\n")
                 self.wait_lock.acquire()
                 self.server.curr_answer_handler = self
@@ -53,7 +54,7 @@ class ClientHandler(threading.Thread):
             except OSError:
                 #self.server.removeclient(self)
                 break
-                pass
+
 
     def run(self):
 
@@ -89,6 +90,7 @@ class Server:
         self.has_winner = False
         self.counterNames = 1
         self.times_up = False
+        self.answer_updated = False
 
 
 
@@ -186,16 +188,17 @@ class Server:
     def ask_question(self):
         question, answer = self.quesBank.get_random_question()
         self.removed_clients = set()
+        question_message = f"Question: {question}\n".encode()
         for client in self.clients:
             client_socket = client.client_socket
-            question_message = f"Question: {question}\n".encode()
             try:
                 client_socket.sendall(question_message)
-                print(question_message.decode())
+
                 client_socket.sendall(b"please insert your answer:\n")
             except OSError:
                 self.clients.remove(client)
-            print("send to clients - please insert your answer:")
+        print(question_message.decode())
+        print("send to clients - please insert your answer:")
         return answer
 
     def deal_with_answer(self, answer, handler, correct_answer):
@@ -208,7 +211,7 @@ class Server:
                 if curr != handler:
                     try:
                         curr.client_socket.sendall(text.encode())
-                    except ConnectionResetError or ConnectionAbortedError :
+                    except ConnectionResetError or ConnectionAbortedError:
                         self.remove_client(curr)
             self.end_game()
             self.has_winner = True
@@ -243,6 +246,7 @@ class Server:
                 handler = self.curr_answer_handler
                 self.curr_answer_handler = None
                 self.curr_answer = None
+
                 self.answer_lock.release()
                 if handler not in self.removed_clients:
                     self.deal_with_answer(answer, handler, correct_answer)
@@ -264,6 +268,7 @@ class Server:
             correct_answer = self.ask_question()
             self.wait_for_answers(correct_answer)
             if self.winnerName is None:
+
                 if self.times_up:
                     for client in self.clients:
                         client_socket = client.client_socket
@@ -272,6 +277,7 @@ class Server:
                         except ConnectionResetError or ConnectionAbortedError:
                             self.remove_client(client)
                     print("Time's up!\n")
+                    self.times_up = False
             else:
                 break
 

@@ -27,8 +27,7 @@ colors = ["Red", "Blue", "Green", "Yellow", "Purple",
 class Client:
     def __init__(self):
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.client_socket.settimeout(3)  # Timeout for socket operations
-        self.state = "looking_for_server"
+        self.client_socket.settimeout(None)  # Timeout for socket operations
         self.connected = False
         self.server_address = None  # Dynamically assigned server address
         self.server_port = None  # Dynamically assigned server port
@@ -85,12 +84,11 @@ class Client:
             print(f"Connecting to the server at {self.server_address}:{self.server_port}...")
             self.client_socket.connect((self.server_address, self.server_port))
             self.connected = True
-            self.state = "waiting_for_game_start"
             print("Connected to the server!")
 
             # Send player name to the server
             self.player_name = self.generate_name()
-            self.client_socket.sendall(self.player_name.encode()) # Send player name with newline
+            self.client_socket.sendall(self.player_name.encode())# Send player name with newline
 
         except socket.timeout:
             print("Connection timed out. No servers found.")
@@ -107,14 +105,16 @@ class Client:
                 pressed_key = None
                 if msvcrt.kbhit():
                     pressed_key = msvcrt.getch()
-                    print("your answer " + pressed_key.decode())
-                    if pressed_key in ([b'Y', b'N', b'F', b'T',b'1',b'0',b'y', b'n',b'f', b't']):
-                        self.client_socket.sendall(pressed_key + b'\n')
-                        self.input_condition.acquire()
-                        self.input_condition.wait()
-                        self.input_condition.release()
-                    else:
-                        print("please insert only N,Y,F,T,0 or 1 -")
+                    if pressed_key.decode() is not None:
+                        if pressed_key in ([b'Y', b'N', b'F', b'T',b'1',b'0',b'y', b'n',b'f', b't']):
+                            print("your answer " + pressed_key.decode())
+                            self.client_socket.sendall(pressed_key + b'\n')
+                            self.input_condition.acquire()
+                            self.input_condition.wait()
+                            self.input_condition.release()
+                        else:
+                            print("your answer " + pressed_key.decode())
+                            print("please insert only N,Y,F,T,0 or 1 -")
                 time.sleep(0.1)
             except ConnectionResetError or ConnectionAbortedError:
                 return
@@ -124,20 +124,23 @@ class Client:
                 data = self.client_socket.recv(1024)
                 if not data:
                     break
+                print("Received from server:", data.decode().strip())
+
                 if "please insert" in data.decode().strip():
                     while msvcrt.kbhit():
-                        msvcrt.getch()
+                        msvcrt.getwch()
                     self.input_condition.acquire()
                     self.input_condition.notify_all()
                     self.input_condition.release()
 
-                print("Received from server:", data.decode().strip())
+
 
                 if "Congratulations to" in data.decode().strip():
                     self.game_ended = True
                     self.input_condition.acquire()
                     self.input_condition.notify_all()
                     self.input_condition.release()
+
                     return
 
             except socket.timeout:
