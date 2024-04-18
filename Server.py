@@ -11,15 +11,7 @@ ANSWER_TIME_LIMIT = 10  # Time limit in seconds for answering each question
 STATE_WAITING_FOR_CLIENTS = 0
 STATE_GAME_MODE = 1
 
-animals = ["Lion", "Elephant", "Giraffe", "Tiger", "Penguin",
-           "Dolphin", "Koala", "Kangaroo", "Cheetah", "Zebra",
-           "Gorilla", "Rhino", "Hippo", "Chimpanzee", "Alligator",
-           "Parrot", "Ostrich", "Cheetah", "Lemur", "Panda"]
 
-colors = ["Red", "Blue", "Green", "Yellow", "Purple",
-          "Orange", "Pink", "Brown", "Black", "White",
-          "Gray", "Gold", "Silver", "Turquoise", "Cyan",
-          "Magenta", "Lime", "Indigo", "Teal", "Beige"]
 
 
 
@@ -38,10 +30,11 @@ class ClientHandler(threading.Thread):
 
 
     def get_input(self):
+        client_socket = self.client_socket
         while True:
             try:
-                client_socket = self.client_socket
-                client_socket.settimeout(0.3)
+
+                client_socket.settimeout(None)
                 received_response = client_socket.recv(1024).decode().strip().upper()
                 client_socket.settimeout(None)
                 # Map the received response to true or false
@@ -58,6 +51,8 @@ class ClientHandler(threading.Thread):
             except socket.timeout:
                 pass
             except OSError:
+                #self.server.removeclient(self)
+                break
                 pass
 
     def run(self):
@@ -91,8 +86,17 @@ class Server:
         self.answer_lock = threading.Condition()
         self.curr_answer_handler = None
         self.curr_answer = None
-        self.has_winner= False
-        self.counterNames=1
+        self.has_winner = False
+        self.counterNames = 1
+        self.times_up = False
+
+
+
+    def remove_client(self, client_handler):
+        if client_handler in self.clients:
+            self.clients.remove(client_handler)
+        if client_handler in self.removed_clients:
+            self.removed_clients.remove(client_handler)
 
     def get_address_with_255(self):
         # Create a UDP socket
@@ -115,12 +119,13 @@ class Server:
 
         return address
 
-    def generate_name(self):
-        animal = random.choice(animals)
-        color = random.choice(colors)
-        counter = self.counterNames
-        self.counterNames += 1
-        return f"{color} {animal} {counter}"
+
+    def counterDec(self):
+        to_return = self.counterNames
+        self.counterNames = self.counterNames+1
+        return to_return
+
+
 
 
 
@@ -129,15 +134,16 @@ class Server:
         broadcast_thread = threading.Thread(target=self.send_offer_message, args=(server_port, server_address,))
         broadcast_thread.daemon = True
         broadcast_thread.start()
-        self.server_socket.settimeout(1)
+        self.server_socket.settimeout(0.3)
         self.last_client_connect_time = None
         while True:
             try:
                 client_socket, client_address = self.server_socket.accept()
-                player_name = None
                 print(f"New connection from {client_address}")
                 client_socket.settimeout(0.1)
-                player_name = self.generate_name()
+                player_name = client_socket.recv(1024).decode().strip()
+                counter = self.counterDec()
+                player_name = f"{player_name} {counter}"
                 if player_name is not None:
                     print(f"Player '{player_name}' connected.")
                     client_handler = ClientHandler(client_socket, client_address, player_name,self)
@@ -145,6 +151,7 @@ class Server:
                     self.clients.append(client_handler)
                     self.last_client_connect_time = time.time()
             except socket.timeout:
+                time.sleep(0.5)
                 if self.last_client_connect_time:
                     if time.time() - self.last_client_connect_time > 10:
                         self.run_game()
@@ -156,7 +163,7 @@ class Server:
         broadcast_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         broadcast_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         broadcast_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-        broadcast_socket.bind((server_address, BROADCAST_PORT))
+        broadcast_socket.bind(("", BROADCAST_PORT))
         broadcast_address = self.get_address_with_255()
         try:
             while True:
@@ -182,9 +189,12 @@ class Server:
         for client in self.clients:
             client_socket = client.client_socket
             question_message = f"Question: {question}\n".encode()
-            client_socket.sendall(question_message)
-            print(question_message.decode())
-            client_socket.sendall(b"please insert your answer:\n")
+            try:
+                client_socket.sendall(question_message)
+                print(question_message.decode())
+                client_socket.sendall(b"please insert your answer:\n")
+            except OSError:
+                self.clients.remove(client)
             print("send to clients - please insert your answer:")
         return answer
 
@@ -195,8 +205,11 @@ class Server:
             self.winnerName = name
             print(f"{name} is Correct!, {name} won!! \n")
             for curr in self.clients:
-                if curr!= handler:
-                    curr.client_socket.sendall(text.encode())
+                if curr != handler:
+                    try:
+                        curr.client_socket.sendall(text.encode())
+                    except ConnectionResetError or ConnectionAbortedError :
+                        self.remove_client(curr)
             self.end_game()
             self.has_winner = True
             return
@@ -205,7 +218,11 @@ class Server:
             print(f"{name} is Incorrect\n")
             for curr in self.clients:
                 if curr.client_socket != handler:
-                    curr.client_socket.sendall(text.encode())
+                    try:
+                        curr.client_socket.sendall(text.encode())
+                    except Exception:
+                        self.remove_client(curr)
+
             text = f"you are wrong please wait to the next round of questions\n"
             handler.client_socket.sendall(text.encode())
             self.remove(handler)
@@ -213,12 +230,15 @@ class Server:
 
     def wait_for_answers(self, correct_answer):
         start_time = time.time()
+        has_answer = False
+        self.times_up = False
         while time.time() - start_time < 10:
             if len(self.removed_clients) == len(self.clients):
                 break
             self.answer_lock.acquire()
             self.answer_lock.wait(timeout=0.1)
             if self.curr_answer_handler is not None:
+                has_answer = True
                 answer = self.curr_answer
                 handler = self.curr_answer_handler
                 self.curr_answer_handler = None
@@ -230,6 +250,8 @@ class Server:
                         return
             else:
                 self.answer_lock.release()
+        if not has_answer:
+            self.times_up = True
 
     def remove(self, c):
         self.removed_clients.add(c)
@@ -242,10 +264,14 @@ class Server:
             correct_answer = self.ask_question()
             self.wait_for_answers(correct_answer)
             if self.winnerName is None:
-                for client in self.clients:
-                    client_socket = client.client_socket
-                    client_socket.sendall(b"Time's up!\n")
-                print("Time's up!\n")
+                if self.times_up:
+                    for client in self.clients:
+                        client_socket = client.client_socket
+                        try:
+                            client_socket.sendall(b"Time's up!\n")
+                        except ConnectionResetError or ConnectionAbortedError:
+                            self.remove_client(client)
+                    print("Time's up!\n")
             else:
                 break
 
@@ -260,23 +286,27 @@ class Server:
         self.start_broadcast(server_port, server_address)
         return
 
-
-
-
     def end_game(self):
         game_over = f"Game over!\nCongratulations to the winner: {self.winnerName}\n"
         for client in self.clients:
             sock = client.client_socket
-            sock.sendall(game_over.encode())
-            sock.close()
-        print(game_over)
+            try:
+                sock.sendall(game_over.encode())
+            except Exception:
+                print("exeption")
+                pass
 
+        time.sleep(4)
+        for client in self.clients:
+            client.client_socket.close()
+        print(game_over)
 
 
 def main():
     while True:
         server = Server()
         server.run()
+
 
 if __name__ == "__main__":
     main()

@@ -6,12 +6,23 @@ import threading
 import sys
 import readchar
 import time
-from inputimeout import inputimeout , TimeoutOccurred
+import random
 
 import select
 
 BROADCAST_PORT = 13117  # Known broadcast port
 TEAM_NAME = "YourTeamName"  # Predefined team name
+
+
+animals = ["Lion", "Elephant", "Giraffe", "Tiger", "Penguin",
+           "Dolphin", "Koala", "Kangaroo", "Cheetah", "Zebra",
+           "Gorilla", "Rhino", "Hippo", "Chimpanzee", "Alligator",
+           "Parrot", "Ostrich", "Cheetah", "Lemur", "Panda"]
+
+colors = ["Red", "Blue", "Green", "Yellow", "Purple",
+          "Orange", "Pink", "Brown", "Black", "White",
+          "Gray", "Gold", "Silver", "Turquoise", "Cyan",
+          "Magenta", "Lime", "Indigo", "Teal", "Beige"]
 
 class Client:
     def __init__(self):
@@ -46,7 +57,9 @@ class Client:
                 if magic_cookie == b"\xab\xcd\xdc\xba" and message_type == 0x2:
                     self.server_address = addr[0]
                     self.server_port = int.from_bytes(data[37:39], byteorder='big')
-                    print(f"Received server broadcast from {self.server_address}:{self.server_port}")
+                    server_name_bytes = data[5:37].rstrip(b'\x00')
+                    server_name = server_name_bytes.decode('utf-8').strip()
+                    print(f"Received offer from server {server_name} \n broadcast from address- {self.server_address} : port-  {self.server_port}")
                     break
                 if self.server_address:
                     return
@@ -56,6 +69,12 @@ class Client:
         except KeyboardInterrupt:
             print("here")
             pass
+
+
+    def generate_name(self):
+        animal = random.choice(animals)
+        color = random.choice(colors)
+        return f"{color} {animal} "
 
 
 
@@ -70,14 +89,17 @@ class Client:
             print("Connected to the server!")
 
             # Send player name to the server
-            #self.player_name = input("Enter your player name: ")
-           # self.client_socket.sendall(self.player_name.encode()) # Send player name with newline
+            self.player_name = self.generate_name()
+            self.client_socket.sendall(self.player_name.encode()) # Send player name with newline
 
         except socket.timeout:
             print("Connection timed out. No servers found.")
             self.receive_broadcast()
 
     def handle_user_input(self):
+        self.input_condition.acquire()
+        self.input_condition.wait()
+        self.input_condition.release()
         while True:
             try:
                 if self.game_ended:
@@ -86,19 +108,16 @@ class Client:
                 if msvcrt.kbhit():
                     pressed_key = msvcrt.getch()
                     print("your answer " + pressed_key.decode())
-                    if pressed_key in ([b'Y', b'N', b'F', b'T',b'1',b'0' ,b'y', b'n' ,b'f', b't']):
+                    if pressed_key in ([b'Y', b'N', b'F', b'T',b'1',b'0',b'y', b'n',b'f', b't']):
                         self.client_socket.sendall(pressed_key + b'\n')
                         self.input_condition.acquire()
                         self.input_condition.wait()
                         self.input_condition.release()
                     else:
                         print("please insert only N,Y,F,T,0 or 1 -")
-
-
                 time.sleep(0.1)
-            except Exception:
-                pass
-
+            except ConnectionResetError or ConnectionAbortedError:
+                return
     def receive_data_from_server(self):
         while True:
             try:
@@ -106,6 +125,8 @@ class Client:
                 if not data:
                     break
                 if "please insert" in data.decode().strip():
+                    while msvcrt.kbhit():
+                        msvcrt.getch()
                     self.input_condition.acquire()
                     self.input_condition.notify_all()
                     self.input_condition.release()
@@ -113,8 +134,7 @@ class Client:
                 print("Received from server:", data.decode().strip())
 
                 if "Congratulations to" in data.decode().strip():
-                    self.game_ended =True
-
+                    self.game_ended = True
                     self.input_condition.acquire()
                     self.input_condition.notify_all()
                     self.input_condition.release()
@@ -122,12 +142,13 @@ class Client:
 
             except socket.timeout:
                 pass
+            except ConnectionResetError or ConnectionAbortedError:
+                break
             finally:
                 time.sleep(0.3)
 
 
     def run(self):
-
         while not self.server_address:  # Wait until the server address is determined
             self.receive_broadcast()
             time.sleep(0.5)
@@ -146,6 +167,7 @@ def main():
     while 1:
         client = Client()
         client.run()
+
 
 if __name__ == "__main__":
     main()
