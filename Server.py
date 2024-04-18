@@ -1,6 +1,7 @@
 import socket
 import threading
 import time
+import random
 
 from Questions import Questions
 
@@ -9,6 +10,17 @@ GAME_DURATION = 30  # Game duration in seconds
 ANSWER_TIME_LIMIT = 10  # Time limit in seconds for answering each question
 STATE_WAITING_FOR_CLIENTS = 0
 STATE_GAME_MODE = 1
+
+animals = ["Lion", "Elephant", "Giraffe", "Tiger", "Penguin",
+           "Dolphin", "Koala", "Kangaroo", "Cheetah", "Zebra",
+           "Gorilla", "Rhino", "Hippo", "Chimpanzee", "Alligator",
+           "Parrot", "Ostrich", "Cheetah", "Lemur", "Panda"]
+
+colors = ["Red", "Blue", "Green", "Yellow", "Purple",
+          "Orange", "Pink", "Brown", "Black", "White",
+          "Gray", "Gold", "Silver", "Turquoise", "Cyan",
+          "Magenta", "Lime", "Indigo", "Teal", "Beige"]
+
 
 
 
@@ -80,6 +92,7 @@ class Server:
         self.curr_answer_handler = None
         self.curr_answer = None
         self.has_winner= False
+        self.counterNames=1
 
     def get_address_with_255(self):
         # Create a UDP socket
@@ -102,6 +115,14 @@ class Server:
 
         return address
 
+    def generate_name(self):
+        animal = random.choice(animals)
+        color = random.choice(colors)
+        counter = self.counterNames
+        self.counterNames += 1
+        return f"{color} {animal} {counter}"
+
+
 
 
     def start_broadcast(self,server_port,server_address):
@@ -116,13 +137,7 @@ class Server:
                 player_name = None
                 print(f"New connection from {client_address}")
                 client_socket.settimeout(0.1)
-                while player_name == None:
-                    try:
-                        player_name = client_socket.recv(1024).decode().strip()
-                    except socket.timeout:
-                            if self.last_client_connect_time is not None and self.last_client_connect_time < time.time():
-                                break
-
+                player_name = self.generate_name()
                 if player_name is not None:
                     print(f"Player '{player_name}' connected.")
                     client_handler = ClientHandler(client_socket, client_address, player_name,self)

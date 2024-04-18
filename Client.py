@@ -70,8 +70,8 @@ class Client:
             print("Connected to the server!")
 
             # Send player name to the server
-            self.player_name = input("Enter your player name: ")
-            self.client_socket.sendall(self.player_name.encode()) # Send player name with newline
+            #self.player_name = input("Enter your player name: ")
+           # self.client_socket.sendall(self.player_name.encode()) # Send player name with newline
 
         except socket.timeout:
             print("Connection timed out. No servers found.")
