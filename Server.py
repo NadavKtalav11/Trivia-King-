@@ -2,8 +2,11 @@ import socket
 import threading
 import time
 import random
-
+from datetime import datetime
+from datetime import timedelta
 from Questions import Questions
+import colorama
+colorama.init()
 
 BROADCAST_PORT = 13117  # Known broadcast port
 GAME_DURATION = 30  # Game duration in seconds
@@ -12,10 +15,26 @@ STATE_WAITING_FOR_CLIENTS = 0
 STATE_GAME_MODE = 1
 
 
-
-
-
-
+class Bcolors:
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKCYAN = '\033[96m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+    MAGENTA = '\033[35m'
+    CYAN = '\033[36m'
+    YELLOW = '\033[33m'
+    RED = '\033[31m'
+    WHITE = '\033[37m'
+    BLACK = '\033[30m'
+    DARKCYAN = '\033[36m'
+    DARKYELLOW = '\033[33m'
+    DARKRED = '\033[31m'
+    DARKWHITE = '\033[37m'
 
 
 class ClientHandler(threading.Thread):
@@ -44,7 +63,7 @@ class ClientHandler(threading.Thread):
                     received_response = False
                 else:
                     break
-                print(f"{self.player_name} sends {received_response}\n")
+                print(Bcolors.CYAN + f"{self.player_name} sends {received_response}" + Bcolors.ENDC)
                 self.wait_lock.acquire()
                 self.server.curr_answer_handler = self
                 self.server.curr_answer = received_response
@@ -59,7 +78,8 @@ class ClientHandler(threading.Thread):
 
     def run(self):
 
-        print(f"New connection from {self.client_address} - Player '{self.player_name}'")
+        print(f"{Bcolors.OKBLUE }New connection from {self.client_address} - Player '{self.player_name}' {Bcolors.ENDC}")
+
         welcome_message = f"Welcome to the game, {self.player_name}!\n".encode()
         self.client_socket.sendall(welcome_message)
         welcome_message = f"Waiting for all the players to join, and then we'll start immediately.".encode()
@@ -82,6 +102,7 @@ class Server:
         self.removed_clients = set()
         self.state = STATE_WAITING_FOR_CLIENTS
         self.game_start_time = None
+        self.game_end_time = None
         self.last_client_connect_time = None
         self.winnerName = None
         self.quesBank = None
@@ -93,6 +114,8 @@ class Server:
         self.times_up = False
         self.answer_updated = False
         self.clients_lock = threading.Condition()
+        self.player_names = []
+        self.counter_rounds = 1
 
 
 
@@ -143,13 +166,14 @@ class Server:
         while True:
             try:
                 client_socket, client_address = self.server_socket.accept()
-                print(f"New connection from {client_address}")
+                print(f"{Bcolors.OKGREEN }New connection from {client_address} {Bcolors.ENDC}")
                 client_socket.settimeout(0.1)
                 player_name = client_socket.recv(1024).decode().strip()
                 counter = self.counterDec()
                 player_name = f"{player_name} {counter}"
                 if player_name is not None:
-                    print(f"Player '{player_name}' connected.")
+                    self.player_names.append(player_name)
+                    print(Bcolors.YELLOW + f"Player '{player_name}' connected." + Bcolors.ENDC)
                     client_handler = ClientHandler(client_socket, client_address, player_name,self)
                     client_handler.start()
                     self.clients_lock.acquire()
@@ -176,7 +200,8 @@ class Server:
                 if self.last_client_connect_time is not None and time.time() - self.last_client_connect_time > 10:
                     break  # Stop sending offers if no client connected within 10 seconds
 
-                print("Sending offer message...")
+                print(f"{Bcolors.OKCYAN}Sending offer message... {Bcolors.ENDC}")
+
                 offer_message = b"\xab\xcd\xdc\xba"  # Magic cookie
                 offer_message += b"\x02"  # Message type: 0x2 for offer
                 offer_message += bytes("BestServerEver".ljust(32), 'utf-8')  # Server name
@@ -202,8 +227,9 @@ class Server:
             except OSError:
                 disconnected_clients.add(client)
         self.remove_disconected_clients(disconnected_clients)
-        print(question_message.decode())
-        print("send to clients - please insert your answer:")
+        print(Bcolors.BOLD + question_message.decode() + Bcolors.ENDC)
+        print(Bcolors.HEADER + "send to clients - please insert your answer:" + Bcolors.ENDC)
+
         return answer
 
     def deal_with_answer(self, answer, handler, correct_answer):
@@ -212,7 +238,7 @@ class Server:
         if correct_answer == answer:
             text = f"{name} is Correct!, {name} won!!\n"
             self.winnerName = name
-            print(f"{name} is Correct!, {name} won!! \n")
+            print(Bcolors.OKGREEN + f"{name} is Correct!, {name} won!! \n" + Bcolors.ENDC)
             for curr in self.clients:
                 if curr != handler:
                     try:
@@ -227,7 +253,9 @@ class Server:
             return
         else:
             text = f"{name} is suspended\n"
-            print(f"{name} is Incorrect\n")
+            print(Bcolors.RED + f"{name} is Incorrect\n" + Bcolors.ENDC)
+            self.counter_rounds += 1
+
             for curr in self.clients:
                 if curr.client_socket != handler:
                     try:
@@ -285,7 +313,8 @@ class Server:
     def run_game(self):
         self.quesBank = Questions()
         disconnected_clients = set()
-        print("Starting the game...")
+        print(Bcolors.WARNING + "Starting the game..." + Bcolors.ENDC)
+
         self.game_start_time = time.time()
         while not self.quesBank.no_repeated_questions_remaining():
             if len(self.clients) == 0:
@@ -305,25 +334,34 @@ class Server:
                         except ConnectionResetError or ConnectionAbortedError:
                             disconnected_clients.add(client)
                     self.remove_disconected_clients(disconnected_clients)
-                    print("Time's up!\n")
+                    print(Bcolors.RED + "Time's up!\n" + Bcolors.ENDC)
                     self.times_up = False
             else:
                 break
 
 
     def run(self):
-        self.server_socket.bind(('', 0))  # Bind to any available interface
+        self.server_socket.bind(('', BROADCAST_PORT))  # Bind to any available interface
         self.server_socket.listen(5)
 
         server_port = self.server_socket.getsockname()[1]  # Get the dynamically assigned port
         server_address = socket.gethostbyname(socket.gethostname())
-        print(f"Server started, listening on IP address {server_address} port {server_port}...")
+        print(f"{Bcolors.HEADER }Server started, listening on IP address {server_address} port {server_port}...{Bcolors.ENDC}")
         self.start_broadcast(server_port, server_address)
         return
 
     def end_game(self):
-
+        self.game_end_time = time.time()
         game_over = f"Game over!\nCongratulations to the winner: {self.winnerName}\n"
+        game_end_datetime = datetime.fromtimestamp(self.game_end_time)
+        game_start_datetime = datetime.fromtimestamp(self.game_start_time)
+        game_total_time = game_end_datetime - game_start_datetime
+        # Extract hours, minutes, and seconds from the game duration
+        hours = game_total_time.seconds // 3600
+        minutes = (game_total_time.seconds % 3600) // 60
+        seconds = game_total_time.seconds % 60
+        print(f"{Bcolors.HEADER}Game over!\n" + Bcolors.ENDC)
+
         for client in self.clients:
             sock = client.client_socket
             try:
@@ -340,7 +378,17 @@ class Server:
                 pass
 
         self.server_socket.close()
-        print(game_over)
+       # print(game_over)
+        print(Bcolors.RED + "Game over!\n" + Bcolors.ENDC)
+        print(Bcolors.DARKCYAN + f"Congratulations to the winner: {self.winnerName}\n" + Bcolors.ENDC)
+        print(Bcolors.UNDERLINE + "Some statistics for the soul..." + Bcolors.ENDC)
+        print(Bcolors.RED + "Game start time: " + game_start_datetime.strftime("%Y-%m-%d %H:%M:%S") + Bcolors.ENDC)
+        print(Bcolors.RED + "Game end time: " + game_end_datetime.strftime("%Y-%m-%d %H:%M:%S") + Bcolors.ENDC)
+        print(Bcolors.RED + "Game duration: " + f"{hours} hours, {minutes} minutes, {seconds} seconds" + Bcolors.ENDC)
+        print(Bcolors.OKCYAN + "Players who participated:" + Bcolors.ENDC)
+        for name in self.player_names:
+            print(name)
+        print(Bcolors.WARNING + f"Total rounds: {self.counter_rounds}\n" + Bcolors.ENDC)
 
 
 def main():
