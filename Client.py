@@ -7,8 +7,8 @@ import sys
 # import readchar
 import time
 import random
-#import colorama
-#colorama.init() # Initialize colorama for cross-platform colored output
+import colorama
+colorama.init()  # Initialize colorama for cross-platform colored output
 
 import select
 
@@ -48,6 +48,7 @@ colors = ["Red", "Blue", "Green", "Yellow", "Purple",
           "Gray", "Gold", "Silver", "Turquoise", "Cyan",
           "Magenta", "Lime", "Indigo", "Teal", "Beige"]
 
+
 class Client:
     def __init__(self):
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -73,7 +74,8 @@ class Client:
         broadcast_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 
         try:
-            print(Bcolors.HEADER + "Listening for server broadcast..." + Bcolors.ENDC)
+         #   print(Bcolors.HEADER + "Listening for server broadcast..." + Bcolors.ENDC)
+            print(f"{Bcolors.HEADER}Listening for server broadcast...{Bcolors.ENDC}")
 
             broadcast_socket.bind(('0.0.0.0', BROADCAST_PORT))
 
@@ -83,7 +85,6 @@ class Client:
 
                 magic_cookie = data[:4]
                 message_type = data[4]
-
 
                 if magic_cookie == b"\xab\xcd\xdc\xba" and message_type == 0x2:
                     self.server_address = addr[0]
@@ -97,11 +98,9 @@ class Client:
                     return
                 time.sleep(1)
 
-
         except KeyboardInterrupt:
             print("here")
             pass
-
 
     """
         Generate a random player name using animals and colors.
@@ -130,7 +129,7 @@ class Client:
 
         # Send player name to the server
             self.player_name = self.generate_name()
-            self.client_socket.sendall(self.player_name.encode())# Send player name with newline
+            self.client_socket.sendall(self.player_name.encode())  # Send player name with newline
 
         except socket.timeout:
             print("Connection timed out. No servers found.")
@@ -203,6 +202,13 @@ class Client:
                     self.input_condition.notify_all()
                     self.input_condition.release()
                     return
+                
+                if "its a tie" in data.decode().strip():
+                    self.game_ended = True
+                    self.input_condition.acquire()
+                    self.input_condition.notify_all()
+                    self.input_condition.release()
+                    return
 
             except socket.timeout:
                 pass
@@ -234,8 +240,6 @@ class Client:
         return
 
 
-
-
 def main():
     while 1:
         client = Client()
@@ -247,7 +251,6 @@ def main():
         finally:
             if client.client_socket:
                 client.client_socket.close()
-
 
 
 if __name__ == "__main__":
