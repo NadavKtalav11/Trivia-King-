@@ -2,7 +2,7 @@ import random
 
 class Questions:
     def __init__(self):
-        self.questions_answers = [
+        """self.questions_answers = [
             ("Is the Eiffel Tower taller during the summer due to thermal expansion?", True),
             ("Did Cleopatra VII speak nine languages fluently?", True),
             ("Was the Great Wall of China visible from space without aid?", False),
@@ -23,6 +23,12 @@ class Questions:
             ("Did Shakespeare write all of his plays alone?", False),
             ("Is the moon slowly moving away from Earth?", True),
             ("Were tomatoes once considered poisonous in Europe?", True)
+        ]"""
+        
+        self.questions_answers = [
+            ("Is the Eiffel Tower taller during the summer due to thermal expansion?", True),
+            ("Did Cleopatra VII speak nine languages fluently?", True),
+            ("Was the Great Wall of China visible from space without aid?", False)
         ]
         self.used_questions = []
 

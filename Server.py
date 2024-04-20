@@ -5,6 +5,8 @@ import random
 from datetime import datetime
 from datetime import timedelta
 from Questions import Questions
+#import  colorama 
+#colorama.init()
 
 
 BROADCAST_PORT = 13117  # Known broadcast port
@@ -198,7 +200,6 @@ class Server:
             while True:
                 if self.last_client_connect_time is not None and time.time() - self.last_client_connect_time > 10:
                     break  # Stop sending offers if no client connected within 10 seconds
-
                 print(f"{Bcolors.OKCYAN}Sending offer message... {Bcolors.ENDC}")
 
                 offer_message = b"\xab\xcd\xdc\xba"  # Magic cookie
@@ -232,6 +233,46 @@ class Server:
 
         return answer
 
+
+
+    def tie_end_game(self):       
+        self.game_end_time = time.time()
+        game_over = f"Game over!\n It's a tie \n"
+        game_end_datetime = datetime.fromtimestamp(self.game_end_time)
+        game_start_datetime = datetime.fromtimestamp(self.game_start_time)
+        game_total_time = game_end_datetime - game_start_datetime
+        # Extract hours, minutes, and seconds from the game duration
+        hours = game_total_time.seconds // 3600
+        minutes = (game_total_time.seconds % 3600) // 60
+        seconds = game_total_time.seconds % 60
+        #print(f"{Bcolors.HEADER}Game over!\n" + Bcolors.ENDC)
+
+        for client in self.clients:
+            sock = client.client_socket
+            try:
+                sock.sendall(game_over.encode())
+            except Exception:
+                print("exeption")
+                pass
+
+        time.sleep(4)
+        for client in self.clients:
+            try:
+                client.client_socket.close()
+            except Exception as e:
+                pass
+        self.server_socket.close()
+       # print(game_over)
+        print(Bcolors.RED + "Game over!\n its a Tie" + Bcolors.ENDC)
+        print(Bcolors.UNDERLINE + "Some statistics for the soul..." + Bcolors.ENDC)
+        print(Bcolors.RED + "Game start time: " + game_start_datetime.strftime("%Y-%m-%d %H:%M:%S") + Bcolors.ENDC)
+        print(Bcolors.RED + "Game end time: " + game_end_datetime.strftime("%Y-%m-%d %H:%M:%S") + Bcolors.ENDC)
+        print(Bcolors.RED + "Game duration: " + f"{hours} hours, {minutes} minutes, {seconds} seconds" + Bcolors.ENDC)
+        print(Bcolors.OKCYAN + "Players who participated:" + Bcolors.ENDC)
+        for name in self.player_names:
+            print(name)
+        print(Bcolors.WARNING + f"Total rounds: {self.counter_rounds-1}\n" + Bcolors.ENDC)
+
     def deal_with_answer(self, answer, handler, correct_answer):
         name = handler.get_name()
         disconnected_clients = set()
@@ -257,11 +298,10 @@ class Server:
             self.counter_rounds += 1
 
             for curr in self.clients:
-                if curr.client_socket != handler:
-                    try:
-                        curr.client_socket.sendall(text.encode())
-                    except Exception:
-                        disconnected_clients.add(curr)
+                try:
+                    curr.client_socket.sendall(text.encode())
+                except Exception:
+                    disconnected_clients.add(curr)
             self.remove_disconected_clients(disconnected_clients)
 
             text = f"you are wrong please wait to the next round of questions\n"
@@ -318,12 +358,15 @@ class Server:
         self.game_start_time = time.time()
         while not self.quesBank.no_repeated_questions_remaining():
             if len(self.clients) == 0:
+                print("starting new game")
                 return
             correct_answer = self.ask_question()
             if len(self.clients) == 0:
+                print("starting new game")
                 return
             self.wait_for_answers(correct_answer)
             if len(self.clients) == 0:
+                print("starting new game")
                 return
             if self.winnerName is None:
                 if self.times_up:
@@ -335,10 +378,17 @@ class Server:
                             disconnected_clients.add(client)
                     self.remove_disconected_clients(disconnected_clients)
                     print(Bcolors.RED + "Time's up!\n" + Bcolors.ENDC)
+                    self.counter_rounds +=1
                     self.times_up = False
                 time.sleep(0.1)
             else:
                 break
+        if self.quesBank.no_repeated_questions_remaining():
+            print("no more Questions -its a tie")
+            self.tie_end_game()
+            return
+            
+        
 
 
     def run(self):
@@ -351,7 +401,7 @@ class Server:
         self.start_broadcast(server_port, server_address)
         return
 
-    def end_game(self):
+    def end_game(self):       
         self.game_end_time = time.time()
         game_over = f"Game over!\nCongratulations to the winner: {self.winnerName}\n"
         game_end_datetime = datetime.fromtimestamp(self.game_end_time)
@@ -361,7 +411,7 @@ class Server:
         hours = game_total_time.seconds // 3600
         minutes = (game_total_time.seconds % 3600) // 60
         seconds = game_total_time.seconds % 60
-        print(f"{Bcolors.HEADER}Game over!\n" + Bcolors.ENDC)
+        #print(f"{Bcolors.HEADER}Game over!\n" + Bcolors.ENDC)
 
         for client in self.clients:
             sock = client.client_socket
@@ -377,7 +427,6 @@ class Server:
                 client.client_socket.close()
             except Exception as e:
                 pass
-
         self.server_socket.close()
        # print(game_over)
         print(Bcolors.RED + "Game over!\n" + Bcolors.ENDC)
@@ -390,6 +439,7 @@ class Server:
         for name in self.player_names:
             print(name)
         print(Bcolors.WARNING + f"Total rounds: {self.counter_rounds}\n" + Bcolors.ENDC)
+
 
 
 def main():
