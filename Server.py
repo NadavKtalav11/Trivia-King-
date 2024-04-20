@@ -38,7 +38,27 @@ class Bcolors:
     DARKWHITE = '\033[37m'
 
 
+"""
+    Thread class to handle each client connection.
+
+    Attributes:
+        client_socket (socket): The socket object for client communication.
+        client_address (tuple): The client's address (host, port).
+        player_name (str): The name of the player connected.
+        server (Server): Reference to the server instance.
+        wait_lock (threading.Condition): Lock for synchronizing client answers.
+    """
 class ClientHandler(threading.Thread):
+
+    """
+        Initialize the ClientHandler instance.
+
+        Args:
+            client_socket (socket): The socket object for client communication.
+            client_address (tuple): The client's address (host, port).
+            player_name (str): The name of the player connected.
+            server (Server): Reference to the server instance.
+        """
     def __init__(self, client_socket, client_address, player_name , server):
         super().__init__()
         self.client_socket = client_socket
@@ -49,7 +69,11 @@ class ClientHandler(threading.Thread):
 
 
 
+    """
+        Receive and process input from the connected client.
 
+        This method continuously listens for input from the client and handles it accordingly.
+        """    
     def get_input(self):
         client_socket = self.client_socket
         while True:
@@ -76,7 +100,11 @@ class ClientHandler(threading.Thread):
                 #self.server.removeclient(self)
                 break
 
+    """
+        Run method for the client handler thread.
 
+        Sends welcome messages and processes client input.
+        """
     def run(self):
 
         print(f"{Bcolors.OKBLUE }New connection from {self.client_address} - Player '{self.player_name}' {Bcolors.ENDC}")
@@ -93,7 +121,11 @@ class ClientHandler(threading.Thread):
     def get_name(self):
         return self.player_name
 
+"""
+    Class representing the game server.
 
+    Handles client connections, game logic, and broadcasting.
+    """
 class Server:
 
     def __init__(self):
@@ -120,12 +152,12 @@ class Server:
 
 
 
-    #def remove_client(self, client_handler):
-    #    if client_handler in self.clients:
-    #       self.clients.remove(client_handler)
-    #    if client_handler in self.removed_clients:
-    #        self.removed_clients.remove(client_handler)
+    """
+        Get the broadcast address with the last octet set to 255.
 
+        Returns:
+            str: The broadcast address.
+        """
     def get_address_with_255(self):
         # Create a UDP socket
         udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -154,10 +186,13 @@ class Server:
         return to_return
 
 
+    """
+        Start broadcasting server offer messages.
 
-
-
-
+        Args:
+            server_port (int): The server port.
+            server_address (str): The server IP address.
+        """
     def start_broadcast(self,server_port,server_address):
         broadcast_thread = threading.Thread(target=self.send_offer_message, args=(server_port, server_address,))
         broadcast_thread.daemon = True
@@ -189,7 +224,13 @@ class Server:
                         return
 
 
+    """
+        Send offer messages to broadcast address.
 
+        Args:
+            server_port (int): The server port.
+            server_address (str): The server IP address.
+        """
     def send_offer_message(self, server_port, server_address):
         broadcast_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         broadcast_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -214,7 +255,12 @@ class Server:
             time.sleep(0.3)
 
 
+    """
+        Ask a question to all connected clients.
 
+        Returns:
+            str: The question asked.
+        """
     def ask_question(self):
         question, answer = self.quesBank.get_random_question()
         self.removed_clients = set()
@@ -273,6 +319,15 @@ class Server:
             print(name)
         print(Bcolors.WARNING + f"Total rounds: {self.counter_rounds-1}\n" + Bcolors.ENDC)
 
+
+    """
+        Process the answer received from a client.
+
+        Args:
+            answer (bool): The answer received.
+            handler (ClientHandler): The client handler instance.
+            correct_answer (bool): The correct answer to the question.
+        """
     def deal_with_answer(self, answer, handler, correct_answer):
         name = handler.get_name()
         disconnected_clients = set()
@@ -308,7 +363,12 @@ class Server:
             handler.client_socket.sendall(text.encode())
             self.remove(handler)
 
+    """
+        Wait for answers from all connected clients.
 
+        Args:
+            correct_answer (bool): The correct answer to the question.
+        """
     def wait_for_answers(self, correct_answer):
         start_time = time.time()
         has_answer = False
@@ -337,6 +397,12 @@ class Server:
         if not has_answer:
             self.times_up = True
 
+    """
+        Remove a client from the server.
+
+        Args:
+            c (ClientHandler): The client handler instance to remove.
+        """
     def remove(self, c):
         self.clients_lock.acquire()
         self.removed_clients.add(c)
@@ -350,6 +416,11 @@ class Server:
                 self.removed_clients.remove(client)
         self.clients_lock.release()
 
+    """
+        Run the game logic.
+
+        Manages asking questions, receiving answers, and determining the winner.
+        """
     def run_game(self):
         self.quesBank = Questions()
         disconnected_clients = set()
@@ -390,7 +461,11 @@ class Server:
             
         
 
+    """
+        Run the game server.
 
+        Handles client connections, broadcasting, and game execution.
+        """
     def run(self):
         self.server_socket.bind(('', BROADCAST_PORT))  # Bind to any available interface
         self.server_socket.listen(5)
@@ -401,6 +476,11 @@ class Server:
         self.start_broadcast(server_port, server_address)
         return
 
+    """
+        End the game and display statistics.
+
+        Calculates game duration, winner, and prints relevant information.
+        """
     def end_game(self):       
         self.game_end_time = time.time()
         game_over = f"Game over!\nCongratulations to the winner: {self.winnerName}\n"
@@ -441,7 +521,11 @@ class Server:
         print(Bcolors.WARNING + f"Total rounds: {self.counter_rounds}\n" + Bcolors.ENDC)
 
 
+"""
+    Main function to run the server.
 
+    Starts the server and runs it indefinitely.
+    """
 def main():
     while True:
         server = Server()
