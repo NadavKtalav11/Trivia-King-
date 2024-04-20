@@ -8,7 +8,7 @@ import sys
 import time
 import random
 import colorama
-colorama.init()
+colorama.init() # Initialize colorama for cross-platform colored output
 
 import select
 
@@ -60,13 +60,19 @@ class Client:
         self.game_ended = False
         self.input_condition = threading.Condition()
 
+    """
+        Receive broadcast messages from the server to discover its address and port.
+
+        This function listens for broadcast messages sent by the server to discover
+        its address and port. It extracts the server address and port from the
+        received message and stores them for later use in connecting to the server.
+        """
     def receive_broadcast(self):
         broadcast_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         broadcast_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         broadcast_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 
         try:
-           # print("Listening for server broadcast...")
             print(Bcolors.HEADER + "Listening for server broadcast..." + Bcolors.ENDC)
 
             broadcast_socket.bind(('0.0.0.0', BROADCAST_PORT))
@@ -84,7 +90,6 @@ class Client:
                     self.server_port = int.from_bytes(data[37:39], byteorder='big')
                     server_name_bytes = data[5:37].rstrip(b'\x00')
                     server_name = server_name_bytes.decode('utf-8').strip()
-                   # print(f"Received offer from server {server_name} \n broadcast from address- {self.server_address} : port-  {self.server_port}")
                     print(Bcolors.OKBLUE + f"Received offer from server {server_name} \n broadcast from address- {self.server_address} : port-  {self.server_port}" + Bcolors.ENDC)
 
                     break
@@ -97,23 +102,29 @@ class Client:
             print("here")
             pass
 
+    """
+        Generate a random player name using animals and colors.
 
+        Returns:
+            str: A randomly generated player name.
+        """
     def generate_name(self):
         animal = random.choice(animals)
         color = random.choice(colors)
         return f"{color} {animal} "
 
+    """
+        Connect to the server using the discovered address and port.
 
-
-
-
+        This function establishes a connection to the server using the server
+        address and port discovered through broadcast messages. It sends the
+        player's name to the server after establishing the connection.
+        """
     def connect_to_server(self):
         try:
-           # print(f"Connecting to the server at {self.server_address}:{self.server_port}...")
             print(Bcolors.WARNING + f"Connecting to the server at {self.server_address}:{self.server_port}..." + Bcolors.ENDC)
             self.client_socket.connect((self.server_address, self.server_port))
             self.connected = True
-           # print("Connected to the server!")
             print(Bcolors.OKGREEN + "Connected to the server!" + Bcolors.ENDC)
 
         # Send player name to the server
@@ -124,6 +135,12 @@ class Client:
             print("Connection timed out. No servers found.")
             self.receive_broadcast()
 
+    """
+        Handle user input during the game.
+
+        This function continuously listens for user input and sends it to the server.
+        It checks if the game has ended to stop listening for input.
+    """
     def handle_user_input(self):
         #self.input_condition.acquire()
         #self.input_condition.wait()
@@ -158,13 +175,20 @@ class Client:
                 time.sleep(0.1)
             except ConnectionResetError or ConnectionAbortedError:
                 return
+
+    """
+        Receive data from the server and process it accordingly.
+
+        This function continuously receives data from the server and processes it
+        according to the content. It handles user input prompts, game messages,
+        and end-of-game notifications.
+        """
     def receive_data_from_server(self):
         while True:
             try:
                 data = self.client_socket.recv(1024)
                 if not data:
                     break
-               # print("Received from server:", data.decode().strip())
                 print(Bcolors.UNDERLINE + "Received from server:" + Bcolors.ENDC)
                 print(Bcolors.BOLD + data.decode().strip() + Bcolors.ENDC)
 
@@ -194,7 +218,14 @@ class Client:
             finally:
                 time.sleep(0.3)
 
+    """
+       Run the client application.
 
+       This function is the director of the execution of the client application. It
+       waits for the server address to be discovered, connects to the server,
+       starts the user input handling thread, receives data from the server,
+       and cleans up resources after the game ends.
+       """
     def run(self):
         while not self.server_address:  # Wait until the server address is determined
             self.receive_broadcast()
