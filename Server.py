@@ -5,8 +5,7 @@ import random
 from datetime import datetime
 from datetime import timedelta
 from Questions import Questions
-import colorama
-colorama.init()
+
 
 BROADCAST_PORT = 13117  # Known broadcast port
 GAME_DURATION = 30  # Game duration in seconds
@@ -211,6 +210,7 @@ class Server:
 
         except KeyboardInterrupt:
             print("error 1")
+            time.sleep(0.3)
 
 
 
@@ -336,6 +336,7 @@ class Server:
                     self.remove_disconected_clients(disconnected_clients)
                     print(Bcolors.RED + "Time's up!\n" + Bcolors.ENDC)
                     self.times_up = False
+                time.sleep(0.1)
             else:
                 break
 
@@ -395,6 +396,7 @@ def main():
     while True:
         server = Server()
         server.run()
+        time.sleep(1)
 
 
 if __name__ == "__main__":

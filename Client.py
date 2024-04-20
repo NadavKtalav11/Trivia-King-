@@ -7,8 +7,8 @@ import sys
 # import readchar
 import time
 import random
-import colorama
-colorama.init() # Initialize colorama for cross-platform colored output
+#import colorama
+#colorama.init() # Initialize colorama for cross-platform colored output
 
 import select
 
@@ -102,6 +102,7 @@ class Client:
             print("here")
             pass
 
+
     """
         Generate a random player name using animals and colors.
 
@@ -142,36 +143,30 @@ class Client:
         It checks if the game has ended to stop listening for input.
     """
     def handle_user_input(self):
-        #self.input_condition.acquire()
-        #self.input_condition.wait()
-        #self.input_condition.release()
+        self.input_condition.acquire()
+        self.input_condition.wait()
+        self.input_condition.release()
         while True:
             try:
                 if self.game_ended:
                     return
                 pressed_key = None
-                # print("before msvcrt.kbhit ")
 
-                #if msvcrt.kbhit():
-                pressed_key = input().strip().upper()
+                if msvcrt.kbhit():
 
-               # pressed_key = msvcrt.getch()
-                if pressed_key is not None:
-                    #if pressed_key in ([b'Y', b'N', b'F', b'T',b'1',b'0',b'y', b'n',b'f', b't']):
-                     #   print("your answer " + pressed_key)
-                      #  self.client_socket.sendall(pressed_key + b'\n')
-                       #self.input_condition.wait()
-                        #self.input_condition.release()
-                   # else:
-                        #print("your answer " + pressed_key)
-                       # print("please insert only N,Y,F,T,0 or 1 -")
-                    if pressed_key in ['Y', 'N', 'F', 'T', '1', '0']:
-                        print("Your answer:", pressed_key)
-                        self.client_socket.sendall(pressed_key.encode() + b'\n')
-                        #self.input_condition.wait()
-                        #self.input_condition.release()
-                    else:
-                        print("Please insert only Y, N, F, T, 0, or 1.")
+                    pressed_key = msvcrt.getch()
+                    print("your answer " + pressed_key.decode())
+                    
+                    if pressed_key.decode() is not None:
+                        if pressed_key in ([b'Y', b'N', b'F', b'T', b'1', b'0', b'y', b'n', b'f', b't']):
+
+                            self.input_condition.acquire()
+                            self.client_socket.sendall(pressed_key + b'\n')
+                            self.input_condition.wait()
+                            self.input_condition.release()
+
+                        else:
+                            print("Please insert only Y, N, F, T, 0, or 1.")
                 time.sleep(0.1)
             except ConnectionResetError or ConnectionAbortedError:
                 return
@@ -189,26 +184,24 @@ class Client:
                 data = self.client_socket.recv(1024)
                 if not data:
                     break
+                
                 print(Bcolors.UNDERLINE + "Received from server:" + Bcolors.ENDC)
                 print(Bcolors.BOLD + data.decode().strip() + Bcolors.ENDC)
-
-
 
                 if "please insert" in data.decode().strip():
                     while msvcrt.kbhit():
                         msvcrt.getwch()
+                        time.sleep(0.05)
+
                     self.input_condition.acquire()
                     self.input_condition.notify_all()
                     self.input_condition.release()
-
-
 
                 if "Congratulations to" in data.decode().strip():
                     self.game_ended = True
                     self.input_condition.acquire()
                     self.input_condition.notify_all()
                     self.input_condition.release()
-
                     return
 
             except socket.timeout:
@@ -241,10 +234,20 @@ class Client:
         return
 
 
+
+
 def main():
     while 1:
         client = Client()
-        client.run()
+        try:
+            client.run()
+            time.sleep(2)
+        except Exception:
+            print("unexpected error- starting new game")
+        finally:
+            if client.client_socket:
+                client.client_socket.close()
+
 
 
 if __name__ == "__main__":
